@@ -164,7 +164,7 @@ tour.xf$Outbound_Connect_Time_Mins_2 = ifelse(tour.xf$Outbound_Connections %in% 
 tour.xf$Return_Connect_Time_Mins_1 = ifelse(tour.xf$Return_Connections == 0, 0, 
                                       ifelse(tour.xf$Return_Connect_Time_Mins_1 <= 0, NA, tour.xf$Return_Connect_Time_Mins_1))
 tour.xf$Return_Connect_Time_Mins_2 = ifelse(tour.xf$Return_Connections %in% c(0, 1), 0, 
-                                      ifelse(tour.xf$Outbound_Connect_Time_Mins_2 <= 0, NA, tour.xf$Outbound_Connect_Time_Mins_2))
+                                      ifelse(tour.xf$Return_Connect_Time_Mins_2 <= 0, NA, tour.xf$Return_Connect_Time_Mins_2))
 
 # Force extremely high values into NAs for later imputation of "more reasonable" values
 tour.xf %>% select(contains("_Mins_")) %>% 
