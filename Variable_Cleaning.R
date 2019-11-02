@@ -71,7 +71,7 @@ james$Outbound_Connect_Time_Mins_2 = ifelse(james$Outbound_Connections %in% c(0,
 james$Return_Connect_Time_Mins_1 = ifelse(james$Return_Connections == 0, 0, 
                                       ifelse(james$Return_Connect_Time_Mins_1 <= 0, NA, james$Return_Connect_Time_Mins_1))
 james$Return_Connect_Time_Mins_2 = ifelse(james$Return_Connections %in% c(0, 1), 0, 
-                                      ifelse(james$Outbound_Connect_Time_Mins_2 <= 0, NA, james$Outbound_Connect_Time_Mins_2))
+                                      ifelse(james$Return_Connect_Time_Mins_2 <= 0, NA, james$Return_Connect_Time_Mins_2))
 
 # Force extremely high values into NAs for later imputation of "more reasonable" values
 james %>% select(contains("_Mins_")) %>% 
