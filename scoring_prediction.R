@@ -1,0 +1,204 @@
+load("C:/James Laptop/M.S. Applied Statistics/MAT 8480 Data Mining and Analytics - Dr. Zhang/Project/Phase 2/tour_clean_bin.RData")
+library(readr)
+tour <- read_csv("C:/James Laptop/M.S. Applied Statistics/MAT 8480 Data Mining and Analytics - Dr. Zhang/Project/scoring_data.csv")
+library(tidyverse)
+library(radiant.data)
+library(hms)
+library(woeBinning)
+library(caTools)
+library(dplyr)
+
+drop.vars <- c(grep("Cus_ID|ProdTour_ID|SalesTourID|HH_ID|Trip_no|Grp_Size_Cat|^(Poor|Fair|Good|Excellent)", names(tour)))
+tour %>% 
+  mutate("Hotel_3orAbove" = Good_Hotels + Excellent_Hotels,
+         "Meals_3orAbove" = Good_Meals + Excellent_Meals,
+         "GUSS_3orAbove" = Good_GUSS + Excellent_GUSS,
+         "Optionals_3orAbove" = Good_Optionals + Excellent_Optionals,
+         "Bus_3orAbove" = Good_Buses + Excellent_Buses) %>% 
+  select(-drop.vars, -contains("Gateway")) %>% 
+  select(1:31, 59:63, everything()) %>%
+  mutate_if(is.character, as.factor) -> tour
+
+tour.xf <- tour %>%
+  # change all character variables into factors
+  mutate_if(is.character, as.factor) %>%
+  # fix typo in TourPriceCat
+  mutate(TourPriceCat = as.factor(if_else(as.character(TourPriceCat) == "More than 50", 
+                                          "More than 5000", as.character(TourPriceCat))),
+         # turn Past_Trips into numeric variable
+         Past_Trips = ifelse(as.character(Past_Trips) == "0 Trips", 0,
+                             ifelse(as.character(Past_Trips) == "1 Trip", 1,
+                                    ifelse(as.character(Past_Trips) == "2 Trips", 2,
+                                           ifelse(as.character(Past_Trips) == "3 Trips", 3,
+                                                  ifelse(as.character(Past_Trips) == "4 Trips", 4, NA))))),
+         Book_Months_num = ifelse(as.numeric(Book_Months) == 1, 4,
+                                  ifelse(as.numeric(Book_Months) == 4, 5,
+                                         ifelse(as.numeric(Book_Months) == 5, 1, as.numeric(Book_Months)))),
+         Age_num = ifelse(as.numeric(Age) == 1, 2,
+                          ifelse(as.numeric(Age) == 2, 3,
+                                 ifelse(as.numeric(Age) == 3, 4,
+                                        ifelse(as.numeric(Age) == 4, 5,
+                                               ifelse(as.numeric(Age) == 5, 6,
+                                                      ifelse(as.numeric(Age) == 6, 7,
+                                                             ifelse(as.numeric(Age) == 7, 8,
+                                                                    ifelse(as.numeric(Age) == 8, NA,
+                                                                           ifelse(as.numeric(Age) == 9, 9,
+                                                                                  ifelse(as.numeric(Age) == 10, 1, NA)))))))))),
+         DB_Enter_Months_num = ifelse(as.numeric(DB_Enter_Months) == 1, 2,
+                                      ifelse(as.numeric(DB_Enter_Months) == 2, 3,
+                                             ifelse(as.numeric(DB_Enter_Months) == 3, 4,
+                                                    ifelse(as.numeric(DB_Enter_Months) == 4, 1, NA)))),
+         TourPriceCat_num = ifelse(as.numeric(TourPriceCat) == 1, 2,
+                                   ifelse(as.numeric(TourPriceCat) == 2, 3,
+                                          ifelse(as.numeric(TourPriceCat) == 3, 4,
+                                                 ifelse(as.numeric(TourPriceCat) == 4, 5,
+                                                        ifelse(as.numeric(TourPriceCat) == 5, 6,
+                                                               ifelse(as.numeric(TourPriceCat) == 6, 7,
+                                                                      ifelse(as.numeric(TourPriceCat) == 7, 8,
+                                                                             ifelse(as.numeric(TourPriceCat) == 8, 1, NA))))))))) %>%
+  # if email is missing, make it unavailable
+  mutate(Email = as.factor(if_else(is.na(as.character(Email)), "Unavailable", as.character(Email))),
+         Optionals_Bin = ifelse(Optionals %in% 0, 1,
+                                ifelse(Optionals %in% 1:5, 2,
+                                       ifelse(Optionals %in% 6:9, 3,
+                                              ifelse(Optionals %in% 9:12, 4, 5)))))
+#Entering NA's instead of 0's when there is no meaning associated with 0
+need_NA<-c("Recommend_GAT", "TravelAgain", "Groups_Interest", "Reference", "Overall_Impression", "Pre_Departure", "Flight_Itin")
+tour.xf[need_NA] <-sapply(tour.xf[need_NA], function(x) gsub("0", NA, x))
+revalue_cols <- c("Recommend_GAT", "TravelAgain", "Groups_Interest", "Reference")
+tour.xf[revalue_cols] <- sapply(tour.xf[revalue_cols], recode, "1"="0", "2"="1")
+tour.xf$TravelAgain <- sapply(tour.xf$TravelAgain, recode, "0"="0", "1"="1", "3"="1")
+factor_cols<- c("Recommend_GAT", "TravelAgain", "Groups_Interest", "Reference", "Overall_Impression", "Pre_Departure", "Flight_Itin", "TD_Overall", "Extension", "Insurance", "FltGty", "Complaint_Event", "Voucher_Event")
+numeric_cols<- c("Optionals", "Eval_Contact_Days")
+tour.xf[numeric_cols] <- sapply(tour.xf[numeric_cols], as.numeric)
+tour.xf[factor_cols] <- sapply(tour.xf[factor_cols], as.factor)
+tour.xf <- tour.xf %>%
+  mutate_if(is.character, as.factor) %>%
+  select(-Book_Months, -Age, -DB_Enter_Months, -TourPriceCat, -Promo_Disc, -Optionals)
+
+tour.xf$FY <- as.factor(tour.xf$FY)
+tour.xf$Tour_Season <- as.factor(tour.xf$Tour_Season)
+tour.xf$Start_Day <- as.factor(tour.xf$Start_Day)
+tour.xf$End_Day <- as.factor(tour.xf$End_Day)
+
+# Transform time into period of a day. I use 4 periods of a day.
+tour.xf2 <- tour.xf[c(grep("_Time$", names(tour.xf)))]
+for (i in 1:4){
+  tour.xf2[[i]] <- ifelse(as_hms(tour.xf2[[i]])>=as.hms("00:00:00") & as_hms(tour.xf2[[i]])<=as.hms("05:59:59"),"Night",
+                          ifelse(as_hms(tour.xf2[[i]])>=as.hms("06:00:00") & as_hms(tour.xf2[[i]])<=as.hms("11:59:59"),"Morning",
+                                 ifelse(as_hms(tour.xf2[[i]])>=as.hms("12:00:00") & as_hms(tour.xf2[[i]])<=as.hms("17:59:59"),"Afternoon","Evening")))
+}
+tour.xf %>% select(-grep("_Time$", names(tour.xf))) %>% cbind(tour.xf2) -> tour.xf
+# Break down TourDate into Date, Month, Year variables for better analysis
+tour.xf %>% mutate(
+  TourDay = day(as.POSIXlt(TourDate, format="%m/%d/%Y")),
+  TourMonth = month(as.POSIXlt(TourDate, format="%m/%d/%Y")),
+  TourYear = year(as.POSIXlt(TourDate, format="%m/%d/%Y"))
+) %>% 
+  # Drop FY because we already have TourYear, and drop TourDate
+  select(-TourDate, -FY) -> tour.xf
+# Transform tour day into tour week (week of a month), still a numerical variable 
+tour.xf %>% mutate(
+  "TourWeek" = ifelse(tour.xf$TourDay < 8, 1,
+                      ifelse(tour.xf$TourDay < 15, 2,
+                             ifelse(tour.xf$TourDay < 22, 3, 4)))) %>% 
+  select(-TourDay) -> tour.xf
+# Fix missing/null values masked as "-1" in some variables.
+tour.xf %>% mutate(
+  "Outbound_Connections" = ifelse(Outbound_Connections < 0 & Outbound_Connect_Time_Mins_2 > 0, 2,
+                                  ifelse(Outbound_Connections < 0 & Outbound_Connect_Time_Mins_1 > 0, 1,
+                                         ifelse(Outbound_Connections >= 0, Outbound_Connections, 0
+                                         )))) -> tour.xf
+tour.xf %>% mutate(
+  "Return_Connections" = ifelse(Return_Connections < 0 & Return_Connect_Time_Mins_2 > 0, 2,
+                                ifelse(Return_Connections < 0 & Return_Connect_Time_Mins_1 > 0, 1,
+                                       ifelse(Return_Connections >= 0, Return_Connections, 0
+                                       )))) -> tour.xf
+# Force negative values into NA/0 values depending on "Connections" variables to ensure logical imputation later
+tour.xf$Outbound_Connect_Time_Mins_1 = ifelse(tour.xf$Outbound_Connections == 0, 0, 
+                                              ifelse(tour.xf$Outbound_Connect_Time_Mins_1 <= 0, NA, tour.xf$Outbound_Connect_Time_Mins_1))
+tour.xf$Outbound_Connect_Time_Mins_2 = ifelse(tour.xf$Outbound_Connections %in% c(0, 1), 0, 
+                                              ifelse(tour.xf$Outbound_Connect_Time_Mins_2 <= 0, NA, tour.xf$Outbound_Connect_Time_Mins_2))
+tour.xf$Return_Connect_Time_Mins_1 = ifelse(tour.xf$Return_Connections == 0, 0, 
+                                            ifelse(tour.xf$Return_Connect_Time_Mins_1 <= 0, NA, tour.xf$Return_Connect_Time_Mins_1))
+tour.xf$Return_Connect_Time_Mins_2 = ifelse(tour.xf$Return_Connections %in% c(0, 1), 0, 
+                                            ifelse(tour.xf$Return_Connect_Time_Mins_2 <= 0, NA, tour.xf$Return_Connect_Time_Mins_2))
+# Force extremely high values into NAs for later imputation of "more reasonable" values
+tour.xf %>% select(contains("_Mins_")) %>% 
+  sapply(function(x) quantile(x, .99, na.rm=T)) %>% max() -> cutoff.mins # Use 99th percentile as threshold
+tour.xf %>% select(contains("_Mins_")) %>%
+  sapply(function(x) ifelse(x > cutoff.mins, NA, x)) %>% 
+  cbind(select(tour.xf, -contains("_Mins_"))) -> tour.clean
+
+tour.bin <- woe.binning.deploy(as.data.frame(tour.clean), binning)
+levels(tour.bin$State.binned) <- c("FL+misc", "CA+PA+misc", "NY", NA)
+levels(tour.bin$TourCode.binned) <- c("Other", "MIT+misc", "VFR", NA)
+levels(tour.bin$Tour_Region.binned) <- c("FS+MD+CNE+misc", "BI+IT+EU+EC+misc", "AM", NA)
+levels(tour.bin$SourceType.binned) <- c("Other", "Internet+Referral", "Old Src IDs+misc", NA)
+
+tour.final <- tour.bin %>%
+  select(-TourCode, -SourceType, -State, -Tour_Region) %>%
+  mutate_if(is.character, as.factor)
+# write final data set to csv
+#write_csv(tour.final, "~/Documents/MAT 8480 - Data Mining/Project/tour.final.csv")
+
+inx <- function (data) { 
+  # numeric input indicator
+  indx <- sapply(data, is.numeric)
+  
+  
+  # nominal input indicator
+  index.cat<-sapply(data, is.factor)
+  
+  
+  # missing value indicator
+  index.na<-sapply(data,function(x) any(is.na(x)))
+  
+  
+  data.frame(indx, index.cat, index.na)
+}
+impute <- function(x,y) {
+  x[is.na(x)]<-y
+  x
+}
+
+
+tour.imp2 <- tour.final
+######## Routine: Update Input Info ########
+
+inx3<-inx(tour.imp2)
+indx<-inx3$indx
+index.cat<-inx3$index.cat
+index.na<-inx3$index.na
+#########################################
+# Numeric Input: By Mean with Means from training #
+
+tour.imp2[indx]<-as.data.frame(mapply(impute,x=tour.imp2[indx],y = Mean))
+# Nominal Input: By Mode #
+tour.imp2[index.cat]<-as.data.frame(mapply(impute,x=tour.imp2[index.cat],y = Mode))
+# Create Missing Value Flag #
+tour.imp2[paste(names(tour.final)[index.na], "NA", sep=".")] <- ifelse(
+  is.na(tour.final[index.na]), 1, 0)
+tour.imp2[grep("NA$",names(tour.imp2))]<-lapply(
+  tour.imp2[grep("NA$",names(tour.imp2))], as.factor) 
+
+
+tour.imp2 -> tour.score
+
+load("C:/James Laptop/M.S. Applied Statistics/MAT 8480 Data Mining and Analytics - Dr. Zhang/Project/Phase 2/scoring.cleaned.Faith.RData")
+
+tour.score <- tour.score %>%
+  mutate(Book_Months_num.NA = as.factor(0),
+         Optionals_Bin.NA = as.factor(0),
+         TourWeek.NA = as.factor(0),
+         Tour_Region.binned.NA = as.factor(0))
+
+RF.prob <- predict(RF, newdata=tour.score,type="prob")[,2]
+RF.class <- as.factor(ifelse(RF.prob >= RFThresh$threshold, 1, 0))
+
+write.csv(RF.class, file="C:/James Laptop/M.S. Applied Statistics/MAT 8480 Data Mining and Analytics - Dr. Zhang/Project/Phase 2/James.csv")
+
+imp <- colnames(tour.imp)
+score <- colnames(tour.score)
+
+View(as.data.frame(cbind(sort(imp), sort(score))))
