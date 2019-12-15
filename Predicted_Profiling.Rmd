@@ -1,0 +1,186 @@
+---
+title: "Predicted value profiling"
+author: "James Nguyen"
+date: "December 5, 2019"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(readr)
+library(ggplot2)
+library(rattle)
+library(scales)
+library(randomForest)
+library(tidyverse)
+```
+
+```{r, echo=F, results=F, message=F}
+load("C:/James Laptop/M.S. Applied Statistics/MAT 8480 Data Mining and Analytics - Dr. Zhang/Project/Phase 2/scoring.cleaned.Faith.RData")
+load("C:/James Laptop/M.S. Applied Statistics/MAT 8480 Data Mining and Analytics - Dr. Zhang/Project/Phase 2/RF.Final.Faith.RData")
+
+tour.score <- tour.score %>%
+  mutate(Book_Months_num.NA = as.factor(0),
+         Optionals_Bin.NA = as.factor(0),
+         TourWeek.NA = as.factor(0),
+         Tour_Region.binned.NA = as.factor(0))
+
+RF.prob <- predict(RF, newdata=tour.score,type="prob")[,2]
+RF.class <- as.factor(ifelse(RF.prob >= RFThresh$threshold, 1, 0))
+
+tour.pro <- cbind(tour.score, RF.class)
+```
+
+For numerical variables, these variables display significant patterns: Grp_Size, Past_Trip, Age_num.
+
+```{r}
+ggplot(tour.pro, aes(x=Grp_Size, fill=RF.class)) + 
+  geom_density(alpha=0.7, linetype=1, size=0.1) + 
+  theme(axis.title.y=element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank()) +
+  labs(title="Group size by predicted target class", x="Group Size") +
+  scale_fill_discrete(name="Predicted to re-book within 12 months?", labels=c("No", "Yes")) +
+  theme(legend.position="bottom",
+        panel.background = element_rect(fill="white"),
+        panel.grid.major = element_line(size=0.3, linetype=3, colour = "#8B8B8B"), 
+        panel.grid.minor = element_line(size=0.3, linetype=3, colour = "#8B8B8B")) +
+  xlim(0,70)
+```
+
+Customers predicted to book within 1 year tend to travel in smaller group sizes compared to those predicted otherwise. Mean and median group sizes of predicted Target 1 are both 30, while they are both 33 for predicted Target 0. Therefore, this indicates a stronger focus on smaller group size travelling may lead to better likelihood of repeated business within 12 months. Smaller travel group size helps tourguides and the company provide better services for customers, especially making it easier to cater to individual needs. 
+
+
+```{r}
+ggplot(tour.pro, aes(x=Past_Trips, fill=RF.class)) + 
+  geom_density(alpha=0.7, linetype=1, size=0.1) + 
+  theme(axis.title.y=element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank()) +
+  labs(title="Number of past trips by predicted target class", 
+       x="Number of past trips") +
+  scale_fill_discrete(name="Predicted to re-book within 12 months?", labels=c("No", "Yes")) +
+  theme(legend.position="bottom",
+        panel.background = element_rect(fill="white"),
+        panel.grid.major = element_line(size=0.3, linetype=3, colour = "#8B8B8B"), 
+        panel.grid.minor = element_line(size=0.3, linetype=3, colour = "#8B8B8B")) +
+  xlim(0,2)
+```
+
+Predictedly repeated customers within 1 year tend to have done business with the company in the past, at least 1 trip. Meanwhile, a large proportion of predicted Target 0 customers have never travelled with the company before. This may showcase a strong advice towards satisfying existing and repeated customers to gain their further loyalty, instead of focusing on attracting new customers. Company resources therefore should be arranged with more weight towards keeping old customers.
+
+```{r}
+ggplot(tour.pro, aes(x=Age_num, fill=RF.class)) + 
+  geom_density(alpha=0.7, linetype=1, size=0.1) + 
+  theme(axis.title.y=element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank()) +
+  labs(title="Age group by predicted target class", 
+       x="Age group") +
+  scale_fill_discrete(name="Predicted to re-book within 12 months?", labels=c("No", "Yes")) +
+  theme(legend.position="bottom",
+        panel.background = element_rect(fill="white"),
+        panel.grid.major = element_line(size=0.3, linetype=3, colour = "#8B8B8B"), 
+        panel.grid.minor = element_line(size=0.3, linetype=3, colour = "#8B8B8B")) +
+  xlim(0,10)
+```
+
+Most customers in the predicted Target 1 group tend to belong to the 60-69 years of age group, with a clear surge compared to other age groups in both predicted Target categories. This age group are pensioners who probably have sufficient savings and time for travelling outside US. It makes sense to focus more on this age group for potential repeated business compared to other groups.
+
+
+For categorical variables, these variables display significant patterns: Tour_Type, Pax_Category, Email, Overall_Impression.
+
+```{r, fig.width=8}
+tour.pro %>% select(Tour_Type, RF.class) %>% 
+  mutate(RF.class = as.numeric(RF.class)-1) %>% 
+  group_by(Tour_Type) %>% 
+  summarize(Not_Booking=1-sum(RF.class)/n(), 
+            Booking=sum(RF.class)/n()) %>% 
+  gather(key="Predicted", value="Prob", 2:3) %>%
+  group_by(Tour_Type) %>% mutate(pos = cumsum(Prob) - Prob/2) %>% 
+  ggplot(aes(x=factor(1), y=Prob, fill=Predicted)) +
+  geom_bar(stat = "identity", width = 1, linetype=1, size=0.75, color="black") +
+  geom_text(aes(x= factor(1), y=pos, label = percent(Prob)), size=5) +
+  facet_wrap(~Tour_Type) +
+  theme(axis.title.y=element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank()) +
+  theme_void() +
+  labs(title="Likelihood of re-booking within 12 months based on tour types") +
+  theme(legend.position="right") +
+  coord_polar("y") +
+  scale_fill_brewer(palette="Spectral")
+```
+
+A larger proportion of predicted Target 1 seems to opt for walking tours compared to that of predicted Target 0, probably indicating a bigger interest in such type of tours for those with higher potential of repeated business. More investment and development into walking tours may lead to better likelihood of re-booking within 1 year.
+
+```{r, fig.width=8}
+tour.pro %>% select(Pax_Category, RF.class) %>% 
+  mutate(RF.class = as.numeric(RF.class)-1) %>% 
+  group_by(Pax_Category) %>% 
+  summarize(Not_Booking=1-sum(RF.class)/n(), 
+            Booking=sum(RF.class)/n()) %>% 
+  gather(key="Predicted", value="Prob", 2:3) %>%
+  group_by(Pax_Category) %>% mutate(pos = cumsum(Prob) - Prob/2) %>% 
+  ggplot(aes(x=factor(1), y=Prob, fill=Predicted)) +
+  geom_bar(stat = "identity", width = 1, linetype=1, size=0.75, color="black") +
+  geom_text(aes(x= factor(1), y=pos, label = percent(Prob)), size=5) +
+  facet_wrap(~Pax_Category) +
+  theme(axis.title.y=element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank()) +
+  theme_void() +
+  labs(title="Likelihood of re-booking within 12 months based on passenger types") +
+  theme(legend.position="right") +
+  coord_polar("y") +
+  scale_fill_brewer(palette="Spectral")
+```
+
+Group Coordinator (GC) and Individual Traveller (IN) groups show better proportions of predictedly repeated customers within 1 year. These 2 types of customers should be main focus of company strategies, accompanied with other insights from other variables.
+
+```{r, fig.width=7, fig.height=4}
+tour.pro %>% select(Email, RF.class) %>% mutate(RF.class = as.numeric(RF.class)-1) %>% 
+  group_by(Email) %>% 
+  summarize(Not_Booking=1-sum(RF.class)/n(), 
+            Booking=sum(RF.class)/n()) %>% 
+  gather(key="Predicted", value="Prob", 2:3) %>%
+  group_by(Email) %>% mutate(pos = cumsum(Prob) - Prob/2) %>% 
+  ggplot(aes(x=factor(1), y=Prob, fill=Predicted)) +
+  geom_bar(stat = "identity", width = 1, linetype=1, size=0.75, color="black") +
+  geom_text(aes(x= factor(1), y=pos, label = percent(Prob)), size=5) +
+  facet_wrap(~Email) +
+  theme(axis.title.y=element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank()) +
+  theme_void() +
+  labs(title="Likelihood of re-booking within 12 months based on availability of emails") +
+  theme(legend.position="bottom") +
+  coord_polar("y") +
+  scale_fill_brewer(palette="Spectral")
+```
+
+A much larger proportion of those with available email addresses in XYZ company's database are predicted to be Target 1, compared to the other groups. Having customer emails available is essential to further product promotion and advertisement, so it makes sense that this information and probably communication channel plays key role in attracting new customers and providing greater chance in gaining repeated bookings within 1 year. The company is advised to utilize their resources to obtain customers' updated email address, which will help to increase chance of re-booking within 1 year.
+
+```{r, fig.width=8}
+tour.pro %>% select(Overall_Impression, RF.class) %>% mutate(RF.class = as.numeric(RF.class)-1) %>% 
+  group_by(Overall_Impression) %>% 
+  summarize(Not_Booking=1-sum(RF.class)/n(), 
+            Booking=sum(RF.class)/n()) %>% 
+  gather(key="Predicted", value="Prob", 2:3) %>%
+  group_by(Overall_Impression) %>% mutate(pos = cumsum(Prob) - Prob/2) %>% 
+  ggplot(aes(x=factor(1), y=Prob, fill=Predicted)) +
+  geom_bar(stat = "identity", width = 1, linetype=1, size=0.75, color="black") +
+  geom_text(aes(x= factor(1), y=pos, label = percent(Prob)), size=5) +
+  facet_wrap(~Overall_Impression) +
+  theme(axis.title.y=element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank()) +
+  theme_void() +
+  labs(title="Likelihood of re-booking within 12 months based on 'Overall Impression' rating") +
+  theme(legend.position="right") +
+  coord_polar("y") +
+  scale_fill_brewer(palette="Spectral")
+```
+
+Customers who give a rating of "5" in the Overall Impression survey question are more likely to book again within 12 months, compared to those giving other answers. The graph also displays an upward trend in the likelihood of re-booking for each higher rating answer, indicating that information from this question is essential in predicting repeated business within 1 year.
